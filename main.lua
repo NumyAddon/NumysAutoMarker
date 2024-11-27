@@ -160,7 +160,7 @@ function NAM:GetConfigurationOptions(groupOrder, dbTable, configName, unitNameMa
     elseif dbTable.style == CONFIG_STYLE_CUSTOMIZABLE_UNITS then
         markerSettings ['targetDescription'] = {
             type = "description",
-            name = "Check http://warcraft.wiki.gg/wiki/UnitId for info about UnitID in addition to these you can also use 'MT1' & 'MT2' for the maintanks, 'MA1' & 'MA2' for the mainassists, 'tank' & 'heal' for the party tank/healer",
+            name = "Check http://warcraft.wiki.gg/wiki/UnitId for info about UnitID. In addition to these, you can also use 'MT1' & 'MT2' for the maintanks, 'MA1' & 'MA2' for the mainassists, 'tank' & 'heal' for the party tank/healer",
             order = subIncrement(),
         }
         -- for now only support 1 unit
@@ -206,7 +206,8 @@ function NAM:GetConfigurationOptions(groupOrder, dbTable, configName, unitNameMa
                 name = "UseEvent",
                 order = increment(),
                 width = "full",
-                desc = "Use events rather than timers (only reliable for group/raid units)",
+                desc = "Use events rather than timers (recommended, but only available for group/raid units)",
+                -- todo: disable if not a group/raid unit
                 descStyle = "inline",
                 get = function() return dbTable.useEvent end,
                 set = function(_, val) self:ToggleEventStyle(dbTable, val) end,
@@ -215,6 +216,7 @@ function NAM:GetConfigurationOptions(groupOrder, dbTable, configName, unitNameMa
                 type = "range",
                 name = "Interval",
                 order = increment(),
+                -- todo: hide unless useEvent is disabled
                 min = 50,
                 max = 1000,
                 step = 50,
