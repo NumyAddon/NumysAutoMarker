@@ -4,11 +4,7 @@ local name, _ = ...
 local NAM = LibStub("AceAddon-3.0"):NewAddon(name, "AceEvent-3.0")
 NumyAutoMarker = NAM
 
-local AceConfig = LibStub("AceConfig-3.0")
-local AceConfigDialog = LibStub("AceConfigDialog-3.0")
-
-local CONFIG_STYLE_FIXED_UNITS = 1
-local CONFIG_STYLE_CUSTOMIZABLE_UNITS = 2
+local DEFAULT_INTERVAL = 50
 
 local MARKERS_MAP = {
     [1] = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:0|t Star |TInterface\\TargetingFrame\\UI-RaidTargetingIcon_1:0|t",
@@ -21,51 +17,69 @@ local MARKERS_MAP = {
     [8] = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_8:0|t Skull |TInterface\\TargetingFrame\\UI-RaidTargetingIcon_8:0|t",
 }
 local MARKERS_MAP_WITH_DISABLED = Mixin({[0] = "[Disabled]"}, MARKERS_MAP)
+local MARKERS_ORDER = {1, 2, 3, 4, 5, 6, 7, 8}
+local MARKERS_ORDER_WITH_DISABLED = {0, 1, 2, 3, 4, 5, 6, 7, 8}
+
+local CROSS = C_Texture.GetAtlasInfo('Radial_Wheel_Icon_Close')
+local WIDTH_MULTIPLIER = 170
+
+------- hack to allow tooltips to work on nameless execute icons
+local MAGIC_TOOLTIP_TEXTS = {
+    remove = "NumyAutoMarker_MagicTooltipRemove",
+}
+do
+    local lastSetOwnerCall
+    local ACDTooltip = LibStub("AceConfigDialog-3.0").tooltip
+    hooksecurefunc(ACDTooltip, 'SetOwner', function(_, ...)
+        lastSetOwnerCall = {...}
+    end)
+    hooksecurefunc(ACDTooltip, 'AddLine', function(tooltip, text, r, g, b, wrap)
+        local title, desc
+        if text == MAGIC_TOOLTIP_TEXTS.remove then
+            title = "Remove"
+            desc = "Remove custom auto-marker"
+        end
+        if title then
+            -- setting text to an empty string seems to clear the owner and effectively resets the tooltip :/
+            tooltip:SetOwner(unpack(lastSetOwnerCall))
+            tooltip:SetText(title, 1, .82, 0, true)
+            tooltip:AddLine(desc, r, g, b, wrap)
+        end
+    end)
+end
 
 --- @class NAM_MarkerConfig
---- @field style number
---- @field interval number
---- @field running boolean
---- @field listen boolean
---- @field useEvent boolean
+--- @field enabled boolean
 --- @field markers table<string, number>
+--- @field isCustom? boolean
 
 function NAM:OnInitialize()
     local defaults = {
+        --- @type table<string, NAM_MarkerConfig>
         configurations = {
-            singleTarget = {
-                style = CONFIG_STYLE_CUSTOMIZABLE_UNITS,
-                interval = 50,
-                running = false,
-                listen = false,
-                useEvent = false,
-                markers = {
-                    ["focus"] = 5,
-                }
-            },
             mainTanks = {
-                style = CONFIG_STYLE_FIXED_UNITS,
-                interval = 50,
-                running = false,
-                listen = false,
-                useEvent = false,
+                enabled = true,
                 markers = {
                     ["MT1"] = 6,
                     ["MT2"] = 2,
-                }
+                },
             },
             dungeon = {
-                style = CONFIG_STYLE_FIXED_UNITS,
-                interval = 50,
-                running = false,
-                listen = false,
-                useEvent = false,
+                enabled = true,
                 markers = {
                     ["tank"] = 6,
                     ["heal"] = 5,
-                }
+                },
             },
-            -- in the future, add a custom one, where you can add any number of marker setups?
+        },
+        customConfigsEnabled = true,
+        --- @type NAM_MarkerConfig[]
+        customConfigs = {
+            {
+                isCustom = true,
+                enabled = false,
+                markers = { ["focus"] = 5 },
+            },
         },
     }
     NAMDB = NAMDB or defaults
@@ -87,36 +101,88 @@ function NAM:OnInitialize()
             end
         end
     end
-    --- @type table<NAM_MarkerConfig, cbObject>
+    --- @type table<NAM_MarkerConfig, FunctionContainer>
     self.tickers = {}
-    self.lastMsgTime = 0
-    self.lastMTMsgTime = 0
 
-    --- @type NAM_MarkerConfig
     for _, configuration in pairs(self.db.configurations) do
-        if configuration.running then
-            self:StartTimer(configuration)
-        end
+        if configuration.enabled then self:EnableAutoMarking(configuration) end
+    end
+    for _, configuration in pairs(self.db.customConfigs) do
+        if self.db.customConfigsEnabled and configuration.enabled then self:EnableAutoMarking(configuration) end
     end
 
     self:RegisterEvent("RAID_TARGET_UPDATE")
     self:RegisterEvent("GROUP_ROSTER_UPDATE")
     self:RegisterEvent("GROUP_JOINED")
 
+    self:RegisterOptions()
+
+    SLASH_NUMY_AUTO_MARKER1 = "/nam"
+    SlashCmdList["NUMY_AUTO_MARKER"] = function(msg)
+        local arg1, arg2, _ = strsplit(" ", msg)
+        arg1 = arg1 and arg1:lower() or ''
+        arg2 = arg2 and arg2:lower() or ''
+        if arg1 == 'toggle' or arg1 == 't' then
+            local config
+            if arg2 == 'maintanks' or arg2 == 'mt' then
+                config = self.db.configurations.mainTanks
+            elseif arg2 == 'dungeon' or arg2 == 'd' then
+                config = self.db.configurations.dungeon
+            else
+                local index = tonumber(arg2)
+                if index and self.db.customConfigs[index] then
+                    config = self.db.customConfigs[index]
+                end
+            end
+            if not config then
+                print("No automarker config found for " .. arg2)
+                print("Try '/nam toggle mainTanks', '/nam toggle dungeon', or '/nam toggle 1' (or another number for custom configs)")
+                print("You can also use the shorter versions '/nam t mt', '/nam t d', or '/nam t 1'")
+                return
+            end
+            if config.enabled then
+                print("Disabling auto-marking for " .. arg2)
+                self:DisableAutoMarking(config)
+            else
+                print("Enabling auto-marking for " .. arg2)
+                self:EnableAutoMarking(config)
+            end
+            self:RegisterOptions()
+
+            return
+        end
+        Settings.OpenToCategory(self.configName)
+    end
+end
+
+local initialized = false
+function NAM:RegisterOptions()
+    self.configName = "Numy's Auto Marker";
+    if not initialized then
+        initialized = true
+        LibStub("AceConfig-3.0"):RegisterOptionsTable(self.configName, function() return self:GetOptionsTable() end)
+        LibStub("AceConfigDialog-3.0"):AddToBlizOptions(self.configName)
+    else
+        LibStub("AceConfigRegistry-3.0"):NotifyChange(self.configName)
+    end
+end
+
+function NAM:GetOptionsTable()
     local increment = CreateCounter()
-    local optionsTable = {
+    return {
         type = "group",
+        name = self.configName,
         args = {
             description = {
                 type = "description",
-                name = "To apply any of the changes, enable and disable auto-marking.",
+                name = "Units are only marked if they don't already have a marker applied, this is to prevent addons fighting over markers.",
                 order = increment(),
             },
-            singleTargetMarking = self:GetConfigurationOptions(increment(), self.db.configurations.singleTarget, "Single Target Auto-Marking"),
             mainTanksMarking = self:GetConfigurationOptions(
                 increment(),
                 self.db.configurations.mainTanks,
-                "Main Tanks Auto-Marking",
+                "Main Tanks Auto-Marking (Raid-only)",
+                "'/nam toggle maintanks' or '/nam t mt' to toggle",
                 {MT1 = "Main Tank 1", MT2 = "Main Tank 2"},
                 {MT1 = 1, MT2 = 2}
             ),
@@ -124,66 +190,167 @@ function NAM:OnInitialize()
                 increment(),
                 self.db.configurations.dungeon,
                 "Dungeon Auto-Marking",
+                "'/nam toggle dungeon' or '/nam t d' to toggle",
                 {tank = "Tank", heal = "Healer"},
                 {tank = 1, heal = 2}
             ),
+            custom = self:GetCustomConfigurationOptions(increment(), self.db.customConfigs),
+        },
+    }
+end
+
+--- @param groupOrder number
+---@param configurations table<string, NAM_MarkerConfig>
+function NAM:GetCustomConfigurationOptions(groupOrder, configurations)
+    self.newUnitMarker = self.newUnitMarker or 5
+
+    local increment = CreateCounter()
+    local subOptions = {
+        type = "group",
+        inline = true,
+        name = "Custom Auto-Markers",
+        order = groupOrder,
+        args = {
+            enable = {
+                type = "toggle",
+                name = "Enable",
+                order = increment(),
+                width = "full",
+                desc = "Global toggle for all custom auto-markers",
+                descStyle = "inline",
+                get = function() return self.db.customConfigsEnabled end,
+                set = function(_, val)
+                    self.db.customConfigsEnabled = val
+                    for _, configuration in pairs(configurations) do
+                        if val and configuration.enabled then
+                            self:EnableAutoMarking(configuration)
+                        else
+                            self:DisableAutoMarking(configuration, true)
+                        end
+                    end
+                end,
+            },
+            unitIdDescription = {
+                type = "description",
+                name = [[Check http://warcraft.wiki.gg/wiki/UnitId for info about UnitID. Player names will often also work, but may need to include realm name.
+In addition to these, you can also use 'MT1' & 'MT2' for the maintanks or 'MA1' & 'MA2' for the mainassists while in a raid group.
+In dungeons, 'tank' & 'heal' can be used for the party tank/healer.
+You can combine these custom units with target, pet, etc. e.g. 'MA1target' would mark the target of the first main assist.]],
+                order = increment(),
+            },
+            addCustomConfig = {
+                type = "input",
+                name = "Add custom unit to mark",
+                order = increment(),
+                get = function() return "" end,
+                set = function(_, val)
+                    if val == "" then return end
+                    --- @type NAM_MarkerConfig
+                    local newConfig = {
+                        isCustom = true,
+                        enabled = true,
+                        markers = { [val] = self.newUnitMarker },
+                    }
+                    table.insert(self.db.customConfigs, newConfig)
+                    self:EnableAutoMarking(newConfig)
+                    self:RegisterOptions()
+                end,
+            },
+            markerForNewUnit = {
+                type = "select",
+                style = "dropdown",
+                name = "Marker",
+                desc = "Marker to use for newly added units",
+                values = MARKERS_MAP,
+                sorting = MARKERS_ORDER,
+                order = increment(),
+                get = function() return self.newUnitMarker end,
+                set = function(_, val)
+                    self.newUnitMarker = val
+                end,
+            },
+            customConfigs = {
+                type = "group",
+                inline = true,
+                name = "",
+                order = increment(),
+                args = {},
+            },
         },
     }
 
-    AceConfig:RegisterOptionsTable(name, optionsTable)
-    AceConfigDialog:AddToBlizOptions(name)
-
-    SLASH_NUMY_AUTO_MARKER1 = "/nam"
-    SlashCmdList["NUMY_AUTO_MARKER"] = function() Settings.OpenToCategory(name) end
-end
-
-function NAM:GetConfigurationOptions(groupOrder, dbTable, configName, unitNameMap, orderMap)
-    unitNameMap = unitNameMap or {}
-    orderMap = orderMap or {}
-
-    local markerSettings = {}
-    local subIncrement = CreateCounter(100)
-    if dbTable.style == CONFIG_STYLE_FIXED_UNITS then
-        for k, _ in pairs(dbTable.markers) do
-            markerSettings['marker' .. k] = {
-                type = "select",
-                style = "dropdown",
-                name = "Marker for " .. (unitNameMap[k] or k),
-                values = MARKERS_MAP_WITH_DISABLED,
-                sorting = {0, 1, 2, 3, 4, 5, 6, 7, 8},
-                order = orderMap[k] or subIncrement(),
-                width = 0.75,
-                get = function() return dbTable.markers[k] end,
-                set = function(_, val) dbTable.markers[k] = tonumber(val) end,
-            }
-        end
-    elseif dbTable.style == CONFIG_STYLE_CUSTOMIZABLE_UNITS then
-        markerSettings ['targetDescription'] = {
-            type = "description",
-            name = "Check http://warcraft.wiki.gg/wiki/UnitId for info about UnitID. In addition to these, you can also use 'MT1' & 'MT2' for the maintanks, 'MA1' & 'MA2' for the mainassists, 'tank' & 'heal' for the party tank/healer",
-            order = subIncrement(),
-        }
-        -- for now only support 1 unit
-        markerSettings['unit_custom_unit'] = {
+    local iconWidth = 26
+    local options = subOptions.args.customConfigs;
+    for index, dbTable in ipairs(configurations) do
+        options.args["enable" .. index] = {
+            type = "toggle",
+            name = "Enable",
+            desc = "Or use '/nam toggle " .. index .. "' or '/nam t " .. index .. "' in a macro",
+            width = 70 / WIDTH_MULTIPLIER,
+            order = increment(),
+            get = function() return dbTable.enabled end,
+            set = function(_, val) if(val) then self:EnableAutoMarking(dbTable) else self:DisableAutoMarking(dbTable) end end,
+        };
+        options.args["unit" .. index] = {
             type = "input",
             name = "Marked UnitID",
-            order = subIncrement(),
+            width = 160 / WIDTH_MULTIPLIER,
+            order = increment(),
             get = function() return next(dbTable.markers) end,
-            set = function(_, val) dbTable.markers = {[val] = dbTable.markers[next(dbTable.markers)]} end,
-        }
-        markerSettings['marker_custom_unit'] = {
+            set = function(_, val)
+                dbTable.markers = {[val] = dbTable.markers[next(dbTable.markers)]}
+                if dbTable.enabled then
+                    self:EnableAutoMarking(dbTable)
+                end
+            end,
+        };
+        options.args["marker" .. index] = {
             type = "select",
             style = "dropdown",
             name = "Marker",
             values = MARKERS_MAP,
-            sorting = {1, 2, 3, 4, 5, 6, 7, 8},
-            order = subIncrement(),
-            width = 0.75,
+            sorting = MARKERS_ORDER,
+            width = 150 / WIDTH_MULTIPLIER,
+            order = increment(),
             get = function() return select(2, next(dbTable.markers)) end,
             set = function(_, val) dbTable.markers[next(dbTable.markers)] = tonumber(val) end,
-        }
+        };
+        options.args["remove" .. index] = {
+            type = "execute",
+            name = "",
+            desc = MAGIC_TOOLTIP_TEXTS.remove,
+            width = iconWidth / WIDTH_MULTIPLIER,
+            order = increment(),
+            func = function()
+                self:DisableAutoMarking(dbTable)
+                table.remove(self.db.customConfigs, index)
+                self:RegisterOptions()
+            end,
+            image = CROSS.file,
+            imageWidth = 16,
+            imageHeight = 16,
+            imageCoords = {
+                CROSS.leftTexCoord, CROSS.rightTexCoord, CROSS.topTexCoord, CROSS.bottomTexCoord,
+            },
+        };
+        options.args["spacer" .. index] = {
+            order = increment(),
+            name = "",
+            type = "description",
+            width = "full",
+        };
     end
 
+    return subOptions
+end
+
+---@param groupOrder number
+---@param dbTable NAM_MarkerConfig
+---@param configName string
+---@param macroDesc string
+---@param unitNameMap table<string, string> # unitID -> display name
+---@param orderMap table<string, number> # unitID -> display order
+function NAM:GetConfigurationOptions(groupOrder, dbTable, configName, macroDesc, unitNameMap, orderMap)
     local increment = CreateCounter()
     local subOptions = {
         type = "group",
@@ -196,39 +363,27 @@ function NAM:GetConfigurationOptions(groupOrder, dbTable, configName, unitNameMa
                 name = "Enable",
                 order = increment(),
                 width = "full",
-                desc = "Toggle " .. configName,
+                desc = macroDesc,
                 descStyle = "inline",
-                get = function() return dbTable.running or dbTable.listen end,
-                set = function(_, val) if(val) then self:StartTimer(dbTable) else self:StopTimer(dbTable) end end,
-            },
-            useEvent = {
-                type = "toggle",
-                name = "UseEvent",
-                order = increment(),
-                width = "full",
-                desc = "Use events rather than timers (recommended, but only available for group/raid units)",
-                -- todo: disable if not a group/raid unit
-                descStyle = "inline",
-                get = function() return dbTable.useEvent end,
-                set = function(_, val) self:ToggleEventStyle(dbTable, val) end,
-            },
-            interval = {
-                type = "range",
-                name = "Interval",
-                order = increment(),
-                -- todo: hide unless useEvent is disabled
-                min = 50,
-                max = 1000,
-                step = 50,
-                get = function() return dbTable.interval end,
-                set = function(_, val) dbTable.interval = val end,
+                get = function() return dbTable.enabled end,
+                set = function(_, val) if(val) then self:EnableAutoMarking(dbTable) else self:DisableAutoMarking(dbTable) end end,
             },
         },
     }
-    local currentCount = increment()
-    for k, v in pairs(markerSettings) do
-        v.order = currentCount + v.order
-        subOptions.args[k] = v
+
+    local orderOffset = increment()
+    for k, _ in pairs(dbTable.markers) do
+        subOptions.args['marker' .. k] = {
+            type = "select",
+            style = "dropdown",
+            name = "Marker for " .. unitNameMap[k],
+            values = MARKERS_MAP_WITH_DISABLED,
+            sorting = MARKERS_ORDER_WITH_DISABLED,
+            order = orderMap[k] + orderOffset,
+            width = 0.75,
+            get = function() return dbTable.markers[k] end,
+            set = function(_, val) dbTable.markers[k] = tonumber(val) end,
+        }
     end
 
     return subOptions
@@ -246,8 +401,15 @@ end
 
 function NAM:HandleEventTrigger()
     for _, configuration in pairs(self.db.configurations) do
-        if configuration.listen then
+        if configuration.enabled then
             self:ProcessMarkers(configuration)
+        end
+    end
+    if self.db.customConfigsEnabled then
+        for _, configuration in pairs(self.db.customConfigs) do
+            if configuration.enabled then
+                self:ProcessMarkers(configuration)
+            end
         end
     end
 end
@@ -259,6 +421,29 @@ function NAM:ProcessMarkers(dbTable)
             self:Mark(target, marker)
         end
     end
+end
+
+--- @param unitID string
+--- @param marker number
+function NAM:Mark(unitID, marker)
+    unitID = strlower(unitID)
+	local inRaid = IsInRaid()
+
+    if inRaid then
+        --check if assist or lead
+        local _, rank, _ = GetRaidRosterInfo(UnitInRaid("player"))
+        if rank == 0 then return end
+    end
+
+	local _, instanceType = IsInInstance()
+    local checkDungeonUnits = not inRaid and IsInGroup() and (instanceType == "party" or instanceType == "scenario")
+
+	unitID = self:ReplaceUnitIDs(unitID, checkDungeonUnits)
+    if not UnitExists(unitID) or GetRaidTargetIndex(unitID) then
+        return
+    end
+
+    SetRaidTarget(unitID, marker)
 end
 
 --- @param unitID string
@@ -289,73 +474,57 @@ function NAM:ReplaceUnitIDs(unitID, checkDungeonUnits)
     return unitID
 end
 
---- @param unitID string
---- @param marker number
-function NAM:Mark(unitID, marker)
-    unitID = strlower(unitID)
-	local inRaid = IsInRaid()
-
-    if inRaid then
-        --check if assist or lead
-        local _, rank, _ = GetRaidRosterInfo(UnitInRaid("player"))
-        if rank == 0 then return end
-    end
-
-	local _, instanceType = IsInInstance()
-    local checkDungeonUnits = not inRaid and IsInGroup() and (instanceType == "party" or instanceType == "scenario")
-
-	unitID = self:ReplaceUnitIDs(unitID, checkDungeonUnits)
-    if not UnitExists(unitID) or GetRaidTargetIndex(unitID) then
-        return
-    end
-
-    SetRaidTarget(unitID, marker)
-end
-
 --- @param dbTable NAM_MarkerConfig
---- @param useEvent boolean
-function NAM:ToggleEventStyle(dbTable, useEvent)
-    if useEvent then
-        dbTable.listen = dbTable.running
-        if dbTable.running then self:StopTimer(dbTable) end
-        dbTable.useEvent = true
-    else
-        dbTable.useEvent = false
-        if dbTable.listen then
-            dbTable.listen = false
-            self:StartTimer(dbTable)
+--- @return boolean
+function NAM:ShouldUseEventStyle(dbTable)
+    for unitToken, _ in pairs(dbTable.markers) do
+        if not (
+            unitToken:find("^party%d$")
+            or unitToken:find("^raid%d+$")
+            or unitToken:find("^player$")
+            or unitToken == "tank"
+            or unitToken == "heal"
+            or unitToken == "MT1"
+            or unitToken == "MT2"
+            or unitToken == "MA1"
+            or unitToken == "MA2"
+        ) then
+            return false
         end
     end
+
+    return true
 end
 
 --- @param dbTable NAM_MarkerConfig
-function NAM:StartTimer(dbTable)
+function NAM:EnableAutoMarking(dbTable)
     if self.tickers[dbTable] then
         self.tickers[dbTable]:Cancel()
+        self.tickers[dbTable] = nil
     end
 
-    dbTable.running = true
-    print("Your NAM timer has been started!")
+    dbTable.enabled = true
+    if dbTable.isCustom and not self.db.customConfigsEnabled then return end
 
     --mark once to force the new mark to appear
     self:ProcessMarkers(dbTable)
-    if dbTable.useEvent then
-        dbTable.running = false
-        dbTable.listen = true
-        return
-    end
-    local interval = dbTable.interval / 1000
-    self.tickers[dbTable] = C_Timer.NewTicker(interval, function() self:ProcessMarkers(dbTable) end)
+    if self:ShouldUseEventStyle(dbTable) then return end
+
+    local interval = DEFAULT_INTERVAL / 1000
+    self.tickers[dbTable] = C_Timer.NewTicker(interval, function()
+        if dbTable.enabled and (not dbTable.isCustom or self.db.customConfigsEnabled) then
+            self:ProcessMarkers(dbTable)
+        end
+    end)
 end
 
-function NAM:StopTimer(dbTable)
-    print("Your NAM timer has stopped")
-    dbTable.running = false
-    if dbTable.useEvent then
-        dbTable.listen = false
-        return
+--- @param dbTable NAM_MarkerConfig
+function NAM:DisableAutoMarking(dbTable, noUpdate)
+    if self.tickers[dbTable] then
+        self.tickers[dbTable]:Cancel()
+        self.tickers[dbTable] = nil
     end
 
-    if not self.tickers[dbTable] then return end
-    self.tickers[dbTable]:Cancel()
+    if noUpdate then return end
+    dbTable.enabled = false
 end

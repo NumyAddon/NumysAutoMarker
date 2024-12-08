@@ -2,7 +2,7 @@
 ## Title: Numy's Auto Marker
 ## Notes: Making automated marking easier! /nam
 ## Author: Numy
-## Version: 0.4
+## Version: @project-version@
 ## SavedVariables: NAMDB
 
 libs\embeds.xml
