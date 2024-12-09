@@ -2,8 +2,11 @@
 ## Title: Numy's Auto Marker
 ## Notes: Making automated marking easier! /nam
 ## Author: Numy
-## Version: @project-version@
 ## SavedVariables: NAMDB
+## IconTexture: Interface\Addons\NumysAutoMarker\media\icon
+## Version: @project-version@
+## X-Curse-Project-ID: 1156415
+## X-Wago-ID: aN0YpM6j
 
 libs\embeds.xml
 
