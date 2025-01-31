@@ -7,6 +7,17 @@
 ## Version: @project-version@
 ## X-Curse-Project-ID: 1156415
 ## X-Wago-ID: aN0YpM6j
+## Category-enUS: Combat
+## Category-deDE: Kampf
+## Category-esES: Combate
+## Category-esMX: Combate
+## Category-frFR: Combat
+## Category-itIT: Combattimento
+## Category-koKR: 전투
+## Category-ptBR: Combate
+## Category-ruRU: Бой
+## Category-zhCN: 战斗
+## Category-zhTW: 戰鬥
 
 libs\embeds.xml
 
