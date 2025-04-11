@@ -235,7 +235,7 @@ function NAM:GetCustomConfigurationOptions(groupOrder, configurations)
                 type = "description",
                 name = [[Check http://warcraft.wiki.gg/wiki/UnitId for info about UnitID. Player names will often also work, but may need to include realm name.
 In addition to these, you can also use 'MT1' & 'MT2' for the maintanks or 'MA1' & 'MA2' for the mainassists while in a raid group.
-In dungeons, 'tank' & 'heal' can be used for the party tank/healer.
+In dungeons, 'tank' & 'heal' can be used for the party tank/healer, and e.g. 'tank[deathknight]' & 'heal[druid]' for the tank/healer of a specific class.
 You can combine these custom units with target, pet, etc. e.g. 'MA1target' would mark the target of the first main assist.]],
                 order = increment(),
             },
@@ -454,16 +454,30 @@ end
 function NAM:ReplaceUnitIDs(unitID, checkDungeonUnits)
     if checkDungeonUnits then
         local tank, heal
+        local tankClass, healClass
         for _, unit in ipairs({"party1", "party2", "party3", "party4", "player"}) do
             if UnitGroupRolesAssigned(unit) == "TANK" then
                 tank = unit
+                tankClass = select(2, UnitClass(unit))
             elseif UnitGroupRolesAssigned(unit) == "HEALER" then
                 heal = unit
+                healClass = select(2, UnitClass(unit))
             end
         end
-
-        unitID = tank and gsub(unitID, "tank", tank) or unitID
-        unitID = heal and gsub(unitID, "heal", heal) or unitID
+        if tank then
+            unitID = gsub(unitID, ("tank%%[%s%%]"):format(tankClass:lower()), tank)
+            if unitID:find("tank%[") then
+                return ""
+            end
+            unitID = gsub(unitID, "tank", tank)
+        end
+        if heal then
+            unitID = gsub(unitID, ("heal%%[%s%%]"):format(healClass:lower()), heal)
+            if unitID:find("heal%[") then
+                return ""
+            end
+            unitID = gsub(unitID, "heal", heal)
+        end
     end
     local mainTank1, mainTank2 = GetPartyAssignment("MAINTANK")
     local mainAssist1, mainAssist2 = GetPartyAssignment("MAINASSIST")
