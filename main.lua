@@ -4,6 +4,7 @@ local name, _ = ...
 local NAM = LibStub("AceAddon-3.0"):NewAddon(name, "AceEvent-3.0")
 NumyAutoMarker = NAM
 
+local DELVE_DIFFICULTY_ID = 208
 local DEFAULT_INTERVAL = 50
 
 local MARKERS_MAP = {
@@ -427,7 +428,7 @@ end
 --- @param marker number
 function NAM:Mark(unitID, marker)
     unitID = strlower(unitID)
-	local inRaid = IsInRaid()
+    local inRaid = IsInRaid()
 
     if inRaid then
         --check if assist or lead
@@ -435,10 +436,11 @@ function NAM:Mark(unitID, marker)
         if rank == 0 then return end
     end
 
-	local _, instanceType = IsInInstance()
-    local checkDungeonUnits = not inRaid and IsInGroup() and (instanceType == "party" or instanceType == "scenario")
+    local _, instanceType = IsInInstance()
+    local difficultyID = select(3, GetInstanceInfo())
+    local checkDungeonUnits = not inRaid and IsInGroup() and (instanceType == "party" or instanceType == "scenario") and difficultyID ~= DELVE_DIFFICULTY_ID
 
-	unitID = self:ReplaceUnitIDs(unitID, checkDungeonUnits)
+    unitID = self:ReplaceUnitIDs(unitID, checkDungeonUnits)
     if not UnitExists(unitID) or GetRaidTargetIndex(unitID) then
         return
     end
