@@ -1,4 +1,10 @@
 ## Interface: @toc-version-retail@
+## Interface-Retail: @toc-version-retail@
+## Interface-Classic: @toc-version-classic@
+## Interface-BCC: @toc-version-bcc@
+## Interface-Wrath: @toc-version-wrath@
+## Interface-Cata: @toc-version-cata@
+## Interface-Mists: @toc-version-mists@
 ## Title: Numy's Auto Marker
 ## Notes: Making automated marking easier! /nam
 ## Author: Numy

@@ -21,7 +21,7 @@ local MARKERS_MAP_WITH_DISABLED = Mixin({[0] = "[Disabled]"}, MARKERS_MAP)
 local MARKERS_ORDER = {1, 2, 3, 4, 5, 6, 7, 8}
 local MARKERS_ORDER_WITH_DISABLED = {0, 1, 2, 3, 4, 5, 6, 7, 8}
 
-local CROSS = C_Texture.GetAtlasInfo('Radial_Wheel_Icon_Close')
+local CROSS = C_Texture.GetAtlasInfo('Radial_Wheel_Icon_Close') or C_Texture.GetAtlasInfo('XMarksTheSpot') or error('Failed to find atlas for cross icon')
 local WIDTH_MULTIPLIER = 170
 
 ------- hack to allow tooltips to work on nameless execute icons
