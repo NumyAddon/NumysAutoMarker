@@ -465,14 +465,14 @@ function NAM:ReplaceUnitIDs(unitID, checkDungeonUnits)
             end
         end
         if tank then
-            unitID = gsub(unitID, ("tank%%[%s%%]"):format(tankClass:lower()), tank)
+            unitID = tankClass and gsub(unitID, ("tank%%[%s%%]"):format(tankClass:lower()), tank) or unitID
             if unitID:find("tank%[") then
                 return ""
             end
             unitID = gsub(unitID, "tank", tank)
         end
         if heal then
-            unitID = gsub(unitID, ("heal%%[%s%%]"):format(healClass:lower()), heal)
+            unitID = healClass and gsub(unitID, ("heal%%[%s%%]"):format(healClass:lower()), heal) or unitID
             if unitID:find("heal%[") then
                 return ""
             end
