@@ -152,7 +152,7 @@ function NAM:OnInitialize()
 
             return
         end
-        Settings.OpenToCategory(self.configName)
+        Settings.OpenToCategory(self.categoryID)
     end
 end
 
@@ -162,7 +162,8 @@ function NAM:RegisterOptions()
     if not initialized then
         initialized = true
         LibStub("AceConfig-3.0"):RegisterOptionsTable(self.configName, function() return self:GetOptionsTable() end)
-        LibStub("AceConfigDialog-3.0"):AddToBlizOptions(self.configName)
+        local _, categoryID = LibStub("AceConfigDialog-3.0"):AddToBlizOptions(self.configName)
+        self.categoryID = categoryID
     else
         LibStub("AceConfigRegistry-3.0"):NotifyChange(self.configName)
     end
