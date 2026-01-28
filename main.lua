@@ -152,6 +152,10 @@ function NAM:OnInitialize()
 
             return
         end
+        if C_SettingsUtil and C_SettingsUtil.OpenSettingsPanel and InCombatLockdown() then
+            LibStub("AceConfigDialog-3.0"):Open(self.configName);
+            return;
+        end
         Settings.OpenToCategory(self.categoryID)
     end
 end
