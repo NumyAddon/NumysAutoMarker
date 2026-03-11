@@ -1,7 +1,7 @@
 local name, _ = ...
 
---- @class NAM : AceAddon, AceEvent-3.0
-local NAM = LibStub("AceAddon-3.0"):NewAddon(name, "AceEvent-3.0")
+--- @class NAM : AceAddon, NumyAceEvent-3.0
+local NAM = LibStub("AceAddon-3.0"):NewAddon(name, "NumyAceEvent-3.0")
 NumyAutoMarker = NAM
 
 local DELVE_DIFFICULTY_ID = 208
