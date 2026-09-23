@@ -2,6 +2,8 @@
 ## Title: Numy's Auto Marker
 ## Notes: Making automated marking easier! /nam
 ## Author: Numy
+## X-GameType: [Game]
+## X-GameFamily: [Family]
 ## SavedVariables: NAMDB
 ## IconTexture: Interface\Addons\NumysAutoMarker\media\icon
 ## Version: @project-version@
